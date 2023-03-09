@@ -1,0 +1,68 @@
+---
+title: "F1_Data"
+author: "Daniel Henricks"
+date: "2023-03-09"
+output: html_document
+---
+
+Inspired from https://www.kaggle.com/code/ekrembayar/formula-1-70th-anniversary/report#lewis-hamilton-vs-max-verstappen.
+
+
+```{r}
+library(magrittr)
+library(tidyverse)
+library(plotly)
+library(DT)
+library(extrafont)
+```
+
+
+```{r}
+
+races <- read.csv("archive/races.csv") %>% filter(year == 2022) %>% rename(circuit = name)
+
+driver_standings <- read.csv("archive/driver_standings.csv") %>% 
+  filter(raceId %in% races$raceId) %>% 
+  select(-driverStandingsId)
+
+lap_times <- read.csv("archive/lap_times.csv") %>% filter(raceId %in% races$raceId)
+
+drivers <- read.csv("archive/drivers.csv", encoding = "UTF-8") %>% 
+  filter(driverId %in% driver_standings$driverId) %>% 
+  unite(driver.name, c("forename", "surname"), sep = " ") %>% 
+  select(driverId, code, number, driver.name) %>% 
+  rename(driver.number = number)
+
+
+gp <- races %>% select(raceId, round, circuit)
+dr <- drivers %>% select(driverId, driver.name, code, driver.number)
+
+lap_times %<>%  left_join(gp, by = "raceId") %>%
+  left_join(dr, by = "driverId")%>% 
+  select(-raceId, -driverId)
+
+driver_standings %<>%  left_join(gp, by = "raceId") %>%
+  left_join(dr, by = "driverId") %>% 
+  select(-raceId, -driverId)
+```
+
+```{r}
+ranking_data <- driver_standings %>%
+  filter(round == 22) %>%
+  arrange(-points) %>%
+  select(driver = driver.name, position, points, wins, code)
+datatable(ranking_data, caption = "2022 Formula 1 Driver Championships")
+```
+
+```{r}
+top_6 <- ranking_data[1:6,]
+filtered_top <- driver_standings %>% filter(driver.name %in% top_6$driver)
+```
+
+```{r}
+ggplot(filtered_top, aes(round, points, color = driver.name)) + geom_line() + labs(x = "Race Number", y = "Points", title = "2022 WDC Driver Standings")
+```
+
+```{r}
+ #alonso_vs_seb <- 
+```
