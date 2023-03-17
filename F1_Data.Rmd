@@ -50,13 +50,13 @@ driver_standings %<>%  left_join(gp, by = "raceId") %>%
 ranking_data <- driver_standings %>%
   filter(round == 22) %>%
   arrange(-points) %>%
-  select(driver = driver.name, position, points, wins, code)
+  select(driver = driver.name, position, points, wins, code)%>%
+  slice(1:6) # slice(1:b) selects the first b rows
 datatable(ranking_data, caption = "2022 Formula 1 Driver Championships")
 ```
 
 ```{r}
-top_6 <- ranking_data[1:6,]
-filtered_top <- driver_standings %>% filter(driver.name %in% top_6$driver)
+filtered_top <- driver_standings %>% filter(driver.name %in% ranking_data$driver)
 ```
 
 ```{r}
@@ -64,5 +64,15 @@ ggplot(filtered_top, aes(round, points, color = driver.name)) + geom_line() + la
 ```
 
 ```{r}
- #alonso_vs_seb <- 
+top_6_race_1 <- driver_standings %>%
+  filter(round == 1)%>%
+  arrange(-points) %>%
+  select(driver = driver.name, position, points, wins, code) %>%
+  slice(1:6)
+head(top_6_race_1)
+race_1 <- lap_times %>%
+  filter(round == 1) %>%
+  filter(!milliseconds %in% boxplot.stats(milliseconds)$out)%>%
+  filter(driver.name %in% top_6_race_1$driver)
+ggplot() + geom_line(race_1, mapping=aes(lap, milliseconds, color = driver.name)) + labs(x = "Lap Number", y = "Time (milliseconds)", title = "Bahrain GP 2022")
 ```
