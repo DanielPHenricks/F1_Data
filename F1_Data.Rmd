@@ -1,39 +1,60 @@
+
 ---
-title: "F1_Data"
+title: "An Analysis of the 2022 Formula One Season"
 author: "Daniel Henricks"
-date: "2023-03-09"
-output: html_document
+output:
+  html_document: default
 ---
 
-Inspired from https://www.kaggle.com/code/ekrembayar/formula-1-70th-anniversary/report#lewis-hamilton-vs-max-verstappen.
 
+This project was inspired from https://www.kaggle.com/code/ekrembayar/formula-1-70th-anniversary/report#lewis-hamilton-vs-max-verstappen. In addition, some of the code for formatting data was referenced.
 
-```{r}
+# About Formula 1 (F1) 
+
+Formula 1 consists of a championship decided by 22 race weekends. Each weekend is composed of practice sessions, qualifying, and a race. 
+Qualifying decides which position the driver starts in, and the race awards points
+to the fastest 10 drivers, with 1 bonus point for whoever does the fastest lap of the day.
+
+# What is the goal of this project? 
+
+For this project, I am analyzing different parts of the 2022 F1 Championship. A few of the results from the 2022 season that I want to analyze are: 
+
+- How dominant Red Bull Racing, one of the teams, were.
+- The margin of victory by Max Verstappen, the 2022 world champion.
+- Whether Verstappen and the Red Bull Racing car are as dominant as Mercedes' 2018-2020 cars, widely acknowledged as being one of the most dominant racing cars of all time.
+
+```{r, include=FALSE}
 library(magrittr)
 library(tidyverse)
+library(dplyr)
 library(plotly)
 library(DT)
 library(extrafont)
+library(lubridate)
 ```
 
-
+### Data formatting and setup for the 2022 year:
+This code will read in the data and filter it to only be for races during the year 2022.
+I also have renamed some fields to make the data easier to work with.
 ```{r}
 
-races <- read.csv("archive/races.csv") %>% filter(year == 2022) %>% rename(circuit = name)
+races <- read.csv("archive/races.csv") %>% filter(year == 2022) %>% rename(circuit = name) # each of the 22 F1 races in 2022
 
-driver_standings <- read.csv("archive/driver_standings.csv") %>% 
+driver_standings <- read.csv("archive/driver_standings.csv") %>% # how many points the drivers have
   filter(raceId %in% races$raceId) %>% 
   select(-driverStandingsId)
 
-lap_times <- read.csv("archive/lap_times.csv") %>% filter(raceId %in% races$raceId)
+lap_times <- read.csv("archive/lap_times.csv") %>% filter(raceId %in% races$raceId) # how fast each of their laps during the race is
 
-drivers <- read.csv("archive/drivers.csv", encoding = "UTF-8") %>% 
+drivers <- read.csv("archive/drivers.csv", encoding = "UTF-8") %>% # these are the names of the drivers
   filter(driverId %in% driver_standings$driverId) %>% 
   unite(driver.name, c("forename", "surname"), sep = " ") %>% 
   select(driverId, code, number, driver.name) %>% 
   rename(driver.number = number)
 
+results <- read.csv("archive/results.csv") %>% filter(raceId %in% races$raceId) # the results of each race
 
+# these are some temporary variables used to select certain columns
 gp <- races %>% select(raceId, round, circuit)
 dr <- drivers %>% select(driverId, driver.name, code, driver.number)
 
@@ -44,35 +65,250 @@ lap_times %<>%  left_join(gp, by = "raceId") %>%
 driver_standings %<>%  left_join(gp, by = "raceId") %>%
   left_join(dr, by = "driverId") %>% 
   select(-raceId, -driverId)
+
+results %<>% left_join(gp, by = "raceId") %>%
+  left_join(dr, by = "driverId") %>% 
+  select(-raceId, -driverId)
+
 ```
 
+## Intro to Formula 1 and the 2022 year
+
+### About Scoring
+
+Each Formula 1 "team" is composed of two drivers and various other staff. Drivers
+earn points for themselves in the drivers' championship and points for their team
+The better the team does, the more money they get to build next year's car.
+
+### Final Standings
+These are the final standings from 2022's championship:
 ```{r}
 ranking_data <- driver_standings %>%
-  filter(round == 22) %>%
-  arrange(-points) %>%
-  select(driver = driver.name, position, points, wins, code)%>%
-  slice(1:6) # slice(1:b) selects the first b rows
+  filter(round == 22) %>% # the final race
+  arrange(-points) %>% 
+  select(driver = driver.name, position, points, wins, code)
 datatable(ranking_data, caption = "2022 Formula 1 Driver Championships")
 ```
 
+As seen in the table, Verstappen was very dominant in the 2022 season, with Leclerc (Ferrari) and Perez (Red Bull) having
+a close battle for second. One observation is the point difference between 6th place and 7th place; 
+7th place starts what is considered as the "midfield," or drivers who come from teams with less funding.
+These cars can be up to 1 second per lap slower on average compared to those of the drivers in the top 6.
+
+### Excluding the midfield and below
+This code filters the rankings to only select the drivers who scored in the top 6.
+This helps make some of the following graphs less cluttered.
 ```{r}
-filtered_top <- driver_standings %>% filter(driver.name %in% ranking_data$driver)
+top_6 <- ranking_data[1:6,]
+filtered_top <- driver_standings %>% filter(driver.name %in% top_6$driver)
 ```
 
+### The Championship Per Race
+This is a plot of the standings per race.
 ```{r}
-ggplot(filtered_top, aes(round, points, color = driver.name)) + geom_line() + labs(x = "Race Number", y = "Points", title = "2022 WDC Driver Standings")
+ggplot(filtered_top, aes(round, points, color = driver.name)) + geom_line() + labs(x = "Race Number", y = "Points", title = "2022 Driver Standings")
 ```
 
+### Example of lap times for a race
+
+Here's an example of how lap times can be used to show the pace of the fastest drivers throughout the race:
+Note that I filter out most laps where drivers have to slow down (pit stops, accidents, etc.) to show a more even graph. It should also
+be noted that Verstappen and Perez (Red Bull's drivers) both had engine failures in this race.
 ```{r}
 top_6_race_1 <- driver_standings %>%
   filter(round == 1)%>%
   arrange(-points) %>%
   select(driver = driver.name, position, points, wins, code) %>%
   slice(1:6)
-head(top_6_race_1)
+
 race_1 <- lap_times %>%
   filter(round == 1) %>%
   filter(!milliseconds %in% boxplot.stats(milliseconds)$out)%>%
   filter(driver.name %in% top_6_race_1$driver)
 ggplot() + geom_line(race_1, mapping=aes(lap, milliseconds, color = driver.name)) + labs(x = "Lap Number", y = "Time (milliseconds)", title = "Bahrain GP 2022")
+```
+
+
+## 1. Red Bull Racing's Pace Advantage in 2022
+To show the dominance that Red Bull had over Mercedes in 2022, see the filtered data below that includes the top 20 fastest laps between the two teams per race. This graph shows the number of those 20 that were achieved in a Red Bull Car, with a line at the expected value of y=10.
+```{r}
+red_bull <- c("VER", "PER") 
+mercedes <- c("HAM", "RUS")
+
+fastest_lap_times <- lap_times %>%
+  arrange(milliseconds) %>%
+  filter(code %in% red_bull | code %in% mercedes) %>%
+  group_by(round) %>%
+  slice(1:20)
+
+lap_times_sum <-fastest_lap_times%>%
+  summarise(sum_wins = sum(code %in% red_bull))
+
+ggplot(lap_times_sum, aes(x = round, y = sum_wins)) + geom_point() + geom_abline(intercept=10, slope=0, color = "red",linetype="dashed") + geom_smooth(method="lm") + ggtitle("Red Bull vs Mercedes: who had better race pace overall in 2022?") + xlab("Race Number") + ylab("Top 20 laps between Red Bull and Mercedes") + ylim(0, 20)
+
+summary(lm(lap_times_sum$sum_wins ~ lap_times_sum$round))
+```
+
+Now to see the mean number of times in the top 20:
+
+```{r}
+num_races <- 22
+sum(lap_times_sum$sum_wins)/num_races # Red Bull vs Mercedes top 20 laps
+```
+
+Now let's see Red Bull versus every other team (including top 50 laps). The dashed red line is the expected value given that every team has similar cars:
+
+```{r}
+sorted_lap_times <- lap_times %>%
+  arrange(milliseconds) %>%
+  group_by(round) %>%
+  slice(1:50)
+
+red_bull_times <- sorted_lap_times %>% summarise(sum_wins = sum(code %in% red_bull))
+
+ggplot(red_bull_times, aes(x = round, y = sum_wins)) + geom_point() + geom_abline(intercept=5, slope=0, color = "red",linetype="dashed") + geom_smooth(method="lm") + ggtitle("Red Bull vs everyone else: the dominance of the RB18 car") + xlab("Race Number") + ylab("Number of Top 50 laps by Red Bull") + ylim(0, 50)
+
+summary(lm(red_bull_times$sum_wins ~ red_bull_times$round))
+```
+
+Now to find the mean number of laps in the top 50 fastest:
+
+```{r}
+sum(red_bull_times$sum_wins)/num_races
+```
+
+## Results regarding Red Bull Racing's dominance
+
+- With about 40% of the fastest laps belonging to Red Bull in 2022, it is clear that their
+car had a significant pace advantage.
+- Red Bull outperformed Mercedes, their usual rival in the championship, by a significant margin with respect to lap pace.
+- With their drivers placing 1st and 3rd and winning a combined 17 out of 22 races, their consistency is clear.
+- Both of the regression lines were slightly downward sloping, as seen in the coefficients generated by both summaries. An explanation for this is that other teams began to develop their cars during the middle and end of the season in an attempt to catch up to Red Bull.
+
+
+## 2. Analyzing Verstappen's dominance in the driver's championship
+
+To analyze Verstappen's dominance, I will first show his pace difference between his teammate (Perez) and then expand it to the rest of the field.
+
+```{r}
+
+VER_fastest_ms <- lap_times %>%
+  filter(code == "VER") %>%
+  group_by(round) %>%
+  slice(which.min(milliseconds)) # select the min of a group
+
+PER_fastest_ms <- lap_times %>%
+  filter(code == "PER") %>%
+  group_by(round) %>%
+  slice(which.min(milliseconds))
+
+VER_fastest_ms$difference <- PER_fastest_ms$milliseconds - VER_fastest_ms$milliseconds
+
+ggplot(VER_fastest_ms, aes(x = round, y = difference)) + geom_point() + geom_smooth(method="lm") + ggtitle("The difference in fastest lap between PER and VER") + xlab("Race Number") + ylab("Difference")
+
+summary(lm(VER_fastest_ms$difference ~ VER_fastest_ms$round))
+```
+
+As seen by the coefficients in the summary, the regression line featured a positive intercept of 497.39 and a negative slope. There naturally exists lots of variance in this data because of crashes/very small sample size (605.05 std. error on the intercept). However, the results from the 2022 season back up this graph (Verstappen won 15 out of 22 races).
+
+```{r}
+VER_wins <- results %>% filter(code == "VER" & position == 1)
+fastest_other <- results %>% filter(round %in% VER_wins$round & position == 2)
+VER_wins$gap <- as.numeric(fastest_other$milliseconds) - as.numeric(VER_wins$milliseconds)
+
+ggplot(VER_wins, aes(x = round, y = gap)) + geom_point() + geom_smooth(method="lm") + ggtitle("Average Verstappen gap to 2nd place at the end of a winning race") + xlab("Race Number") + ylab("Gap to 2nd (ms)")
+
+summary(lm(VER_wins$gap ~ VER_wins$round))
+```
+
+The regression line yields a intercept of 7821.7, or about 7 seconds. The line is slightly positively sloped but not enough to draw a conclusion from (203.6). 
+
+Filtering out the races that Perez placed 2nd (similar car):
+
+```{r}
+PER_p2 <- results %>% filter(code == "PER" & position == 2)
+fastest_non_perez <- results %>% 
+  filter(round %in% VER_wins$round) %>% 
+  filter((position == 2 & !(round %in% PER_p2$round)) | (position == 3 & round %in% PER_p2$round))
+```
+
+Explaining the logic behind this code:
+Consider all rounds in which Verstappen won (15 rounds). In these rounds, I want to have the difference between Verstappen and
+the fastest non-Red Bull car. If Perez (the other Red Bull) did not take second, include the driver in 2nd place. Otherwise, include the 3rd
+place time since Perez must have taken 2nd.
+
+
+```{r}
+  
+VER_wins$gap <- as.numeric(fastest_non_perez$milliseconds) - as.numeric(VER_wins$milliseconds)
+ggplot(VER_wins, aes(x = round, y = gap)) + geom_point() + geom_smooth(method="lm") + ggtitle("Verstappen gap to fastest non-Red Bull at the end of a winning race") + xlab("Race Number") + ylab("Gap to fastest non-Red Bull (ms)")
+
+summary(lm(VER_wins$gap ~ VER_wins$round))
+
+```
+
+This filtering process shows how much faster both Verstappen and the Red Bull team were. The intercept is now 20367.9 (20 seconds), making a 13 second difference in removing these times. The slope (inferring that the variance) of the data is much larger and negative sloping as well, similar to what was seen in the previous graphs.
+
+### Results regarding Verstappen's dominance
+- Verstappen clearly was the fastest driver in 2022, with the difference in time between second and first when he won being very large.
+- Perez was a great supporting driver for Verstappen, allowing him to gain time on other drivers in the race.
+- The trend that other cars were developing faster than Red Bull continues to show in this data with another negatively-sloping regression line.
+- It remains to be seen whether an average of 20 seconds between other teams was more than what Mercedes had in their most dominant years.
+
+
+## 3. 2020's Mercedes year and the W11 compared to 2022 and the Red Bull
+
+```{r}
+
+
+
+```
+
+## Conclusion and Additional Data: 2023's Championship
+
+
+```{r, include=FALSE}
+races_2023 <- read.csv("archive/races.csv") %>% filter(year == 2023) %>% rename(circuit = name) # each of the 23 F1 races in 2023
+
+driver_standings_2023 <- read.csv("archive/driver_standings.csv") %>% # how many points the drivers have
+  filter(raceId %in% races_2023$raceId) %>% 
+  select(-driverStandingsId)
+
+lap_times_2023 <- read.csv("archive/lap_times.csv") %>% filter(raceId %in% races_2023$raceId) # how fast each of their laps during the race is
+
+drivers_2023 <- read.csv("archive/drivers.csv", encoding = "UTF-8") %>% # these are the names of the drivers
+  filter(driverId %in% driver_standings_2023$driverId) %>% 
+  unite(driver.name, c("forename", "surname"), sep = " ") %>% 
+  select(driverId, code, number, driver.name) %>% 
+  rename(driver.number = number)
+
+results_2023 <- read.csv("archive/results.csv") %>% filter(raceId %in% races_2023$raceId) # the results of each race
+
+# these are some temporary variables used to select certain columns
+gp <- races_2023 %>% select(raceId, round, circuit)
+dr <- drivers_2023 %>% select(driverId, driver.name, code, driver.number)
+
+lap_times_2023 %<>%  left_join(gp, by = "raceId") %>%
+  left_join(dr, by = "driverId")%>% 
+  select(-raceId, -driverId)
+
+driver_standings_2023 %<>%  left_join(gp, by = "raceId") %>%
+  left_join(dr, by = "driverId") %>% 
+  select(-raceId, -driverId)
+```
+
+```{r}
+
+top_3_2023 <- driver_standings_2023 %>%
+  arrange(-points) %>%
+  filter(round == 2) %>%
+  select(driver = driver.name, position, points, wins, code) %>%
+  slice(1:3)
+
+fastest_laps_2023 <- lap_times_2023 %>%
+  filter(round == 1) %>%
+  arrange(milliseconds) %>%
+  filter(code %in% red_bull | code %in% mercedes) %>%
+  slice(1:10)
+sum(fastest_laps_2023$code %in% red_bull)
 ```
