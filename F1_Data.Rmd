@@ -258,57 +258,99 @@ This filtering process shows how much faster both Verstappen and the Red Bull te
 
 ## 3. 2020's Mercedes year and the W11 compared to 2022 and the Red Bull
 
-```{r}
-
-
-
-```
-
-## Conclusion and Additional Data: 2023's Championship
-
-
+I wish to use my methods from parts 1 and 2 to show the difference between both of these cars and their dominance.
+First, I will import the data (doing it this way makes filtering easier later):
 ```{r, include=FALSE}
-races_2023 <- read.csv("archive/races.csv") %>% filter(year == 2023) %>% rename(circuit = name) # each of the 23 F1 races in 2023
 
-driver_standings_2023 <- read.csv("archive/driver_standings.csv") %>% # how many points the drivers have
-  filter(raceId %in% races_2023$raceId) %>% 
+races_2020 <- read.csv("archive/races.csv") %>% filter(year == 2020) %>% rename(circuit = name) # each of the F1 races in 2020
+
+driver_standings_2020 <- read.csv("archive/driver_standings.csv") %>% # how many points the drivers have
+  filter(raceId %in% races_2020$raceId) %>% 
   select(-driverStandingsId)
 
-lap_times_2023 <- read.csv("archive/lap_times.csv") %>% filter(raceId %in% races_2023$raceId) # how fast each of their laps during the race is
+lap_times_2020 <- read.csv("archive/lap_times.csv") %>% filter(raceId %in% races_2020$raceId) # how fast each of their laps during the race is
 
-drivers_2023 <- read.csv("archive/drivers.csv", encoding = "UTF-8") %>% # these are the names of the drivers
-  filter(driverId %in% driver_standings_2023$driverId) %>% 
+drivers_2020 <- read.csv("archive/drivers.csv", encoding = "UTF-8") %>% # these are the names of the drivers
+  filter(driverId %in% driver_standings_2020$driverId) %>% 
   unite(driver.name, c("forename", "surname"), sep = " ") %>% 
   select(driverId, code, number, driver.name) %>% 
   rename(driver.number = number)
 
-results_2023 <- read.csv("archive/results.csv") %>% filter(raceId %in% races_2023$raceId) # the results of each race
+results_2020 <- read.csv("archive/results.csv") %>% filter(raceId %in% races_2020$raceId) # the results of each race
 
 # these are some temporary variables used to select certain columns
-gp <- races_2023 %>% select(raceId, round, circuit)
-dr <- drivers_2023 %>% select(driverId, driver.name, code, driver.number)
+gp <- races_2020 %>% select(raceId, round, circuit)
+dr <- drivers_2020 %>% select(driverId, driver.name, code, driver.number)
 
-lap_times_2023 %<>%  left_join(gp, by = "raceId") %>%
+lap_times_2020 %<>%  left_join(gp, by = "raceId") %>%
   left_join(dr, by = "driverId")%>% 
   select(-raceId, -driverId)
 
-driver_standings_2023 %<>%  left_join(gp, by = "raceId") %>%
+driver_standings_2020 %<>%  left_join(gp, by = "raceId") %>%
   left_join(dr, by = "driverId") %>% 
   select(-raceId, -driverId)
+
+results_2020 %<>% left_join(gp, by = "raceId") %>%
+  left_join(dr, by = "driverId") %>% 
+  select(-raceId, -driverId)
+
 ```
+
+### Info about 2020's season:
+Here's a datatable containing the results from 2020:
 
 ```{r}
 
-top_3_2023 <- driver_standings_2023 %>%
-  arrange(-points) %>%
-  filter(round == 2) %>%
-  select(driver = driver.name, position, points, wins, code) %>%
-  slice(1:3)
+rankings <- driver_standings_2020 %>%
+  filter(round == 17) %>% # the final race
+  arrange(-points) %>% 
+  select(driver = driver.name, points, wins, code)
+datatable(rankings, caption = "2020 Formula 1 Driver Championships")
 
-fastest_laps_2023 <- lap_times_2023 %>%
-  filter(round == 1) %>%
-  arrange(milliseconds) %>%
-  filter(code %in% red_bull | code %in% mercedes) %>%
-  slice(1:10)
-sum(fastest_laps_2023$code %in% red_bull)
 ```
+
+Lewis Hamilton and Valtteri Bottas (1st and 2nd) were teammates during the 2020 season for Mercedes, with Verstappen and Albon (7th) driving for Red Bull in 2020. Because of COVID, the season was shorter than normal (17 races).
+
+I'm more interested about the team (the car) than the dynamic between the drivers. To see if this year's Mercedes car was as dominant as people think it is, let me run a few tests:
+
+```{r}
+mercedes <- c("HAM", "BOT")
+
+sorted_lap_times <- lap_times_2020 %>%
+  arrange(milliseconds) %>%
+  group_by(round) %>%
+  slice(1:50)
+
+merc_times <- sorted_lap_times %>% summarise(sum_wins = sum(code %in% mercedes))
+
+ggplot(merc_times, aes(x = round, y = sum_wins)) + geom_point() + geom_abline(intercept=5, slope=0, color = "red",linetype="dashed") + geom_smooth(method="lm") + ggtitle("The Mercedes W11") + xlab("Race Number") + ylab("Number of Top 50 laps by Mercedes") + ylim(0, 50)
+
+summary(lm(merc_times$sum_wins ~ merc_times$round))
+
+```
+
+Wow! Mercedes has a much more dominant graph in terms of top 50 laps. Note that race 14 (Turkey, the one on the E(x) = 5 line) was super rainy. Rain is known as the "great equalizer" in Formula 1: it makes it much easier for other cars to go fast. Other than this outlier, the slope of the regression line is still very interesting and follows the same trend as in previous parts: other teams catch up to the fastest team as the season goes on.
+
+The equation for the regression line is y = -0.8382x + 28.7206.
+
+### The difference in time between Lewis Hamilton and 2nd (including Mercedes) at the end of the race:
+
+```{r}
+HAM_wins <- results_2020 %>% filter((code == "HAM" & position == 1)| (code == "BOT" & position == 1))
+fastest_other <- results_2020 %>% filter(round %in% HAM_wins$round & position == 2)
+HAM_wins$gap <- as.numeric(fastest_other$milliseconds) - as.numeric(HAM_wins$milliseconds)
+
+ggplot(HAM_wins, aes(x = round, y = gap)) + geom_point() + geom_smooth(method="lm") + ggtitle("Average Mercedes gap to 2nd place at the end of a winning race") + xlab("Race Number") + ylab("Gap to 2nd (ms)")
+
+summary(lm(HAM_wins$gap ~ HAM_wins$round))
+```
+
+Both of these graphs have slightly exceeded the gap that Red Bull has had during the 2020 season in terms of the regression line.
+
+## Conclusion 
+
+- Verstappen and Perez are looking to become as dominant as Hamilton and Bottas were in 2020, and their 2022 data proves it.
+- The Mercedes W11 (2020 car) was clearly unlike any other car in F1's history.
+- Both Hamilton and Verstappen are much more talented than most of the field during their respective years.
+- With a change in engine regulations set to come in 2026, it is uncertain whether Red Bull's car will be able to develop fast enough to ever challenge any of the W11's lap times.
+
